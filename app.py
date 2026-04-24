@@ -1,5 +1,5 @@
 """
-CSV Chat Assistant — Streamlit UI
+CSV Chat Assistant — Streamlit UI with analysis next to each message
 Powered by GROQ + LangGraph multi-agent orchestration.
 """
 
@@ -22,27 +22,24 @@ from observability import wrap_llm
 st.set_page_config(
     page_title="Data Chat",
     page_icon="📊",
-    layout="centered",   # centered looks more polished than wide for a chat UI
+    layout="centered",
     initial_sidebar_state="expanded",
 )
 
 
 # ============================================================================
-# CUSTOM STYLES — subtle polish, not theme-override
+# CUSTOM STYLES
 # ============================================================================
 st.markdown("""
 <style>
-    /* Tighten up vertical spacing */
     .block-container {
         padding-top: 2rem;
         padding-bottom: 2rem;
         max-width: 900px;
     }
-    /* Sidebar header */
     section[data-testid="stSidebar"] .stHeadingContainer {
         padding-top: 0;
     }
-    /* File cards in sidebar */
     .file-card {
         background: rgba(128, 128, 128, 0.06);
         border: 1px solid rgba(128, 128, 128, 0.15);
@@ -59,7 +56,6 @@ st.markdown("""
         font-size: 0.75rem;
         margin-top: 2px;
     }
-    /* Sample-query chips on the empty state */
     .sample-chip {
         display: inline-block;
         padding: 6px 14px;
@@ -70,10 +66,8 @@ st.markdown("""
         cursor: pointer;
         font-size: 0.85rem;
     }
-    /* Hide Streamlit default footer */
     footer {visibility: hidden;}
     #MainMenu {visibility: hidden;}
-    /* Clean up chat message spacing */
     [data-testid="stChatMessage"] {
         padding: 0.75rem 1rem;
     }
@@ -148,7 +142,6 @@ with st.sidebar:
                 </div>
                 """, unsafe_allow_html=True)
             with cols[1]:
-                # Slight vertical alignment nudge
                 st.write("")
                 if st.button("✕", key=f"del_{fid}", help=f"Remove {fid}"):
                     registry.remove(fid)
@@ -158,8 +151,6 @@ with st.sidebar:
         st.caption("_No files yet_")
 
     # --- Upload ---
-    # In the sidebar, replace the st.file_uploader section with:
-
     with st.popover("➕ Add CSV", use_container_width=True):
         uploaded_files = st.file_uploader(
             "Select CSV files",
@@ -194,7 +185,7 @@ with st.sidebar:
             cache.conversation = []
             st.rerun()
 
-    # --- Developer info (collapsed by default) ---
+    # --- Developer info ---
     with st.expander("Developer"):
         stats = cache.get_stats()
         st.caption(f"Cached queries: {stats['data_cache_size']}")
@@ -205,7 +196,7 @@ with st.sidebar:
 
 
 # ============================================================================
-# MAIN AREA — empty state vs chat
+# MAIN AREA - Render chat with analysis expanders NEXT TO each message
 # ============================================================================
 def render_empty_state():
     """Shown when no chat has started yet."""
@@ -231,7 +222,6 @@ def render_empty_state():
             unsafe_allow_html=True,
         )
 
-        # Sample queries as clickable buttons
         samples = [
             "What's in this data?",
             "Show me summary statistics",
@@ -250,19 +240,24 @@ def render_empty_state():
 if not st.session_state.messages:
     render_empty_state()
 else:
-    for msg in st.session_state.messages:
+    for i, msg in enumerate(st.session_state.messages):
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
-            # If this assistant message has metadata, show it subtly
             if msg.get("meta"):
                 st.caption(msg["meta"])
+        
+        # NEW: If this is an assistant message AND it has analysis, show it right after
+        if msg["role"] == "assistant" and msg.get("progress"):
+            query_label = msg.get("query", "Query")[:50]
+            with st.expander(f"📊 Analysis: {query_label}", expanded=False):
+                st.markdown(msg["progress"])
 
 
 # ============================================================================
 # INPUT + HANDLER
 # ============================================================================
 prompt = st.chat_input("Ask about your data...") or st.session_state.pending_query
-st.session_state.pending_query = None   # consume the pending query
+st.session_state.pending_query = None
 
 if prompt:
     # Persist and render user message
@@ -280,6 +275,7 @@ if prompt:
         answer = ""
         meta_line = ""
         result = None
+        progress_log = []  # Collect progress for analysis
 
         try:
             if not registry.files:
@@ -300,7 +296,6 @@ if prompt:
                 status.update(label="Analyzing...", state="running")
                 context = cache.get_conversation_text(last_n=4)
 
-                progress_log = []
                 def on_status(msg: str):
                     progress_log.append(msg)
 
@@ -350,10 +345,13 @@ if prompt:
             status.update(label="Error", state="error")
             logger.error(f"Query error: {e}", exc_info=True)
 
-    # Persist
+    # Persist - NOW INCLUDE progress in the message
+    progress_text = "\n".join(progress_log) if progress_log else ""
     st.session_state.messages.append({
         "role": "assistant",
         "content": answer,
         "meta": meta_line,
-    })  
+        "query": prompt,           # NEW: Store original query
+        "progress": progress_text  # NEW: Store analysis/progress
+    })
     cache.add_to_conversation("assistant", answer)
