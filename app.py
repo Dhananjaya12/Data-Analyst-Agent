@@ -79,6 +79,7 @@ st.markdown("""
 # STATE
 # ============================================================================
 os.makedirs("data", exist_ok=True)
+os.makedirs("outputs", exist_ok=True)  # NEW: Ensure outputs dir exists
 
 if "registry" not in st.session_state:
     st.session_state.registry = CSVRegistry()
@@ -121,10 +122,10 @@ except Exception as e:
 
 
 # ============================================================================
-# HELPER: Get file data with timestamp to force refresh
+# HELPER: Get file data - CHECKED ON EVERY RENDER
 # ============================================================================
 def get_file_data(filepath):
-    """Read file and return data + timestamp for cache busting"""
+    """Read file if it exists. Called on every render, not cached."""
     if not os.path.exists(filepath):
         return None
     try:
@@ -211,7 +212,7 @@ with st.sidebar:
         
         col1, col2 = st.columns(2)
         
-        # Download LLM Calls JSONL
+        # Download LLM Calls JSONL - READ ON EVERY RENDER
         with col1:
             jsonl_data = get_file_data('outputs/llm_calls.jsonl')
             if jsonl_data:
@@ -221,12 +222,12 @@ with st.sidebar:
                     file_name="llm_calls.jsonl",
                     mime="application/json",
                     use_container_width=True,
-                    key=f"download_jsonl_{len(st.session_state.messages)}"  # Force refresh
+                    key=f"download_jsonl_{len(st.session_state.messages)}"
                 )
             else:
                 st.caption("_No calls logged_")
         
-        # Download Query Rollup Excel
+        # Download Query Rollup Excel - READ ON EVERY RENDER
         with col2:
             xlsx_data = get_file_data('outputs/query_rollup.xlsx')
             if xlsx_data:
@@ -236,7 +237,7 @@ with st.sidebar:
                     file_name="query_rollup.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     use_container_width=True,
-                    key=f"download_xlsx_{len(st.session_state.messages)}"  # Force refresh
+                    key=f"download_xlsx_{len(st.session_state.messages)}"
                 )
             else:
                 st.caption("_No metrics yet_")
