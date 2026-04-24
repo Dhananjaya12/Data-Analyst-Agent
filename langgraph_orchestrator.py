@@ -1,6 +1,6 @@
 """
 LangGraph Orchestrator with Ensemble Critics, Self-Healing Loop,
-rich progress callbacks, and clean structured response.
+rich progress callbacks, clean structured response, and answerability check.
 """
 
 import uuid
@@ -18,6 +18,7 @@ from agents.refinement import RefinementAgent
 from logger_config import logger
 
 from observability import tracker, observe_agent
+# from semantic_cache import semantic_cache
 
 
 MAX_REFINEMENTS = 2
@@ -44,6 +45,20 @@ def route_after_ensemble(state) -> Literal["finalize", "refine"]:
         return "finalize"
 
 
+def route_after_file_router(state) -> Literal["planner", "unanswerable"]:
+    """Route based on answerability check from FileRouter"""
+    
+    if isinstance(state, dict):
+        answerability = state.get('answerability', 'ANSWERABLE')
+    else:
+        answerability = getattr(state, 'answerability', 'ANSWERABLE')
+    
+    if answerability == "UNANSWERABLE":
+        logger.info("❌ Query is unanswerable → skip to final message")
+        return "unanswerable"
+    return "planner"
+
+
 def make_nodes(registry, status_callback=None):
     from llm_config import (
         get_fast_llm, get_reasoning_llm, get_insights_llm,
@@ -57,7 +72,7 @@ def make_nodes(registry, status_callback=None):
     critic_llm = get_critic_llm()
 
     safety          = SafetyGuardAgent(fast_llm)
-    file_router     = FileRouterAgent(fast_llm, registry)
+    file_router     = FileRouterAgent(reasoning_llm, registry)
     planner         = PlannerAgent(reasoning_llm)
     analyst         = DataAnalystAgent(code_llm, registry)
     insights        = InsightGeneratorAgent(insights_llm)
@@ -96,7 +111,13 @@ def make_nodes(registry, status_callback=None):
         with observe_agent("FileRouter"):
             result = await file_router.execute(state)
         files = _get(result, "selected_file_ids", [])
-        _emit(f"   ✅ Selected: `{', '.join(files) if files else 'none'}`")
+        answerability = _get(result, "answerability", "ANSWERABLE")
+        reason = _get(result, "answerability_reason", "")
+        
+        if answerability == "UNANSWERABLE":
+            _emit(f"   ⚠️ Query is unanswerable: {reason}")
+        else:
+            _emit(f"   ✅ Selected: `{', '.join(files) if files else 'none'}`")
         return result
 
     async def planner_node(state):
@@ -233,6 +254,17 @@ def make_nodes(registry, status_callback=None):
             _emit(f"   💻 Refined code:\n```python\n{_truncate(new_code, 300)}\n```")
         return result
 
+    def unanswerable_node(state):
+        """Handle queries that cannot be answered from available data"""
+        reason = getattr(state, 'answerability_reason', 'The query requires data that is not available.')
+        answer = f"I couldn't answer that question with the available data. {reason}"
+        state.insights = [answer]
+        state.final_answer = answer
+        state.confidence = 0.0
+        state.is_valid = False
+        logger.info(f"📭 Query is unanswerable: {reason}")
+        return state
+
     async def finalize_node(state):
         _emit("✅ **Finalizing** response...")
         return state
@@ -248,6 +280,7 @@ def make_nodes(registry, status_callback=None):
         "insights_critic": insights_critic_node,
         "merge_critics": merge_critics_node,
         "refinement": refinement_node,
+        "unanswerable": unanswerable_node,
         "finalize": finalize_node,
     }
 
@@ -266,10 +299,21 @@ def create_analysis_graph(registry, status_callback=None):
     workflow.add_node("insights_critic", nodes["insights_critic"])
     workflow.add_node("merge_critics", nodes["merge_critics"])
     workflow.add_node("refinement", nodes["refinement"])
+    workflow.add_node("unanswerable", nodes["unanswerable"])
     workflow.add_node("finalize", nodes["finalize"])
 
     workflow.add_edge("safety_guard", "file_router")
-    workflow.add_edge("file_router", "planner")
+    
+    # Route after FileRouter: check answerability
+    workflow.add_conditional_edges(
+        "file_router",
+        route_after_file_router,
+        {
+            "planner": "planner",
+            "unanswerable": "unanswerable"
+        }
+    )
+    
     workflow.add_edge("planner", "data_analyst")
     workflow.add_edge("data_analyst", "insight_generator")
 
@@ -294,6 +338,8 @@ def create_analysis_graph(registry, status_callback=None):
     workflow.add_edge("refinement", "data_critic")
     workflow.add_edge("refinement", "insights_critic")
 
+    # Both unanswerable and finalize lead to END
+    workflow.add_edge("unanswerable", "finalize")
     workflow.add_edge("finalize", END)
     workflow.set_entry_point("safety_guard")
 
@@ -325,16 +371,40 @@ async def execute_with_langgraph(registry, query: str, context: str = "",
     tracker.start_query(query_id, query)
 
     # --- Full-response cache short-circuit -----------------------------
+    # file_ids = sorted(registry.files.keys())
+    # cached = cache_manager.get_full_response(query, file_ids)
+    # if cached:
+    #     _status("⚡ **Cache hit** — returning cached answer instantly")
+    #     tracker.end_query(
+    #         status="ok", confidence=cached.get("confidence", 1.0),
+    #         refinements=0, files_used=", ".join(file_ids),
+    #         extra={"full_response_cache_hit": True},
+    #     )
+    #     return {**cached, "cache_hit": True}
+
     file_ids = sorted(registry.files.keys())
+
+    # Try exact-match cache first
     cached = cache_manager.get_full_response(query, file_ids)
     if cached:
-        _status("⚡ **Cache hit** — returning cached answer instantly")
+        _status("⚡ **Cache hit** — returning cached answer instantly (exact match)")
         tracker.end_query(
             status="ok", confidence=cached.get("confidence", 1.0),
             refinements=0, files_used=", ".join(file_ids),
             extra={"full_response_cache_hit": True},
         )
         return {**cached, "cache_hit": True}
+
+    # Try semantic cache (catches paraphrases like "total customers" vs "how many customers?")
+    # cached = semantic_cache.get(query, file_ids)
+    # if cached:
+    #     _status("⚡ **Cache hit** — returning cached answer instantly (semantic match)")
+    #     tracker.end_query(
+    #         status="ok", confidence=cached.get("confidence", 1.0),
+    #         refinements=0, files_used=", ".join(file_ids),
+    #         extra={"semantic_cache_hit": True},
+    #     )
+    #     return {**cached, "cache_hit": True}
 
     try:
         state = ExecutionState(user_query=query)
@@ -372,6 +442,7 @@ async def execute_with_langgraph(registry, query: str, context: str = "",
         # Cache only if we got a confidently-good answer
         if confidence >= 0.7 and insights:
             cache_manager.set_full_response(query, file_ids, response)
+            # semantic_cache.set(query, file_ids, response)  # NEW LINE
 
         tracker.end_query(
             status="ok", confidence=confidence,
@@ -380,5 +451,26 @@ async def execute_with_langgraph(registry, query: str, context: str = "",
         return response
 
     except Exception as e:
-        tracker.end_query(status="error", error=str(e))
-        raise
+        from agents.base import StopExecution
+        
+        if isinstance(e, StopExecution):
+            # SafetyGuard or other node raised StopExecution
+            state = e.args[0] if e.args else None
+            error_msg = state.error if state else str(e)
+            _status(f"🛑 {error_msg}")
+            
+            response = {
+                "answer": error_msg,
+                "insights": [error_msg],
+                "confidence": 0.0,
+                "files_used": "",
+                "is_valid": False,
+                "refinements": 0,
+                "cache_hit": False,
+            }
+            tracker.end_query(status="blocked", error=error_msg)
+            return response
+        else:
+            # Other exceptions
+            tracker.end_query(status="error", error=str(e))
+            raise

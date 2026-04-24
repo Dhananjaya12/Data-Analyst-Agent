@@ -83,12 +83,12 @@ class CacheManager:
                 del self.llm_cache[key]
         return None
 
-    def set_llm_cache(self, agent: str, user_query: str, file_ids: list,
-                      response: str, model: str = "") -> None:
+    def set_llm_cache(self, agent, user_query, file_ids, response, model=""):
         key = self._llm_cache_key(agent, user_query, file_ids)
         self.llm_cache[key] = {
             'response': response,
             'model': model,
+            'file_ids': list(file_ids or []),   # ← add this
             'expires': datetime.now() + timedelta(seconds=self.cache_ttl),
             'created': datetime.now(),
         }
@@ -152,5 +152,30 @@ class CacheManager:
             'conversation_length': len(self.conversation),
         }
 
+    def invalidate_for_file(self, file_id: str) -> int:
+        """Drop every cached artifact that references this file."""
+        dropped = 0
+
+        # Full-response / data cache
+        keys = [k for k, e in self.data_cache.items()
+                if file_id in (e.get('files', []) or [])]
+        for k in keys:
+            del self.data_cache[k]
+        dropped += len(keys)
+
+        # LLM prompt cache (requires set_llm_cache to store file_ids — see below)
+        llm_keys = [k for k, e in self.llm_cache.items()
+                    if file_id in (e.get('file_ids', []) or [])]
+        for k in llm_keys:
+            del self.llm_cache[k]
+        dropped += len(llm_keys)
+
+        # Conversation — stale answers may reference deleted data
+        conv_len = len(self.conversation)
+        self.conversation = []
+
+        if dropped or conv_len:
+            print(f"🗑️  Invalidated {dropped} cache entries + {conv_len} conversation messages")
+        return dropped
 
 cache_manager = CacheManager()

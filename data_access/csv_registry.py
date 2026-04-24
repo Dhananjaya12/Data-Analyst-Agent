@@ -107,6 +107,17 @@ class CSVRegistry:
         """All file descriptions combined - for router agent"""
         return "\n\n".join(info.build_context() for info in self.files.values())
     
-    def remove(self, file_id: str):
-        if file_id in self.files:
-            del self.files[file_id]
+    def remove(self, file_id: str) -> bool:
+        """Remove a file from the registry AND delete the backing CSV on disk."""
+        if file_id not in self.files:
+            return False
+        info = self.files[file_id]
+        try:
+            if info.file_path and os.path.exists(info.file_path):
+                os.remove(info.file_path)
+                print(f"🗑️  Deleted file: {info.file_path}")
+        except Exception as e:
+            print(f"⚠️  Could not delete {info.file_path}: {e}")
+        del self.files[file_id]
+        print(f"🗑️  Unregistered: {file_id}")
+        return True

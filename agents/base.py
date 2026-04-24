@@ -39,6 +39,8 @@ class ExecutionState:
     data_issue: str = ""
     insights_issue: str = ""
     conversation_context: str = ""
+    answerability: str = "ANSWERABLE"
+    answerability_reason: str = ""
 
 class StopExecution(Exception):
     def __init__(self, state):

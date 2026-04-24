@@ -28,13 +28,17 @@ class FileRouterAgent(BaseAgent):
         if len(files) == 1:
             state.selected_file_ids = [files[0].file_id]
             state.selected_files_context = files[0].build_context()
+            state.answerability = "ANSWERABLE"
+            state.answerability_reason = ""
             print(f"✅ Only one file: {files[0].file_id}")
             return state
         
         # Multiple files - use LLM to route
         all_contexts = self.registry.get_all_contexts()
         
-        prompt = f"""You are a file routing expert. Pick the MINIMUM files needed.
+        prompt = f"""You are a file routing expert. For the query:
+1. Pick the MINIMUM files needed to answer it
+2. Determine if the query is answerable from available data
 
 # CRITICAL RULE: 
 Default to ONE file. Only pick multiple if the query REQUIRES columns from different files (i.e., a join is mandatory).
@@ -42,7 +46,7 @@ Default to ONE file. Only pick multiple if the query REQUIRES columns from diffe
 # Available files (with columns and sample data):
 {all_contexts}
 
-# Decision Algorithm (follow exactly):
+# TASK 1: File Selection (follow exactly):
 
 STEP 1: Identify required columns from the query
    - What column(s) does the answer need?
@@ -57,25 +61,16 @@ STEP 3: Verify with sample data
    - Check the SAMPLE DATA shown for each file
    - Confirm the columns actually contain what you expect
 
-# Examples:
+# TASK 2: Answerability Check
 
-Query: "What is the total revenue?"
-Analysis: Need `revenue` column. Check files → found in sales_data only.
-→ {{"selected_files": ["sales_data"], "reasoning": "revenue column exists in sales_data alone"}}
-
-Query: "Revenue per product category"  
-Analysis: Need `revenue` (in sales_data) AND `category` (in products_data). Must join.
-→ {{"selected_files": ["sales_data", "products_data"], "reasoning": "revenue in sales, category in products - join required"}}
-
-Query: "How many customers do we have?"
-Analysis: Need customer count. Check files → customer records in customers_data.
-→ {{"selected_files": ["customers_data"], "reasoning": "customer count from customers file only"}}
+After selecting files, ask: "Can this query be answered using ONLY the selected files?"
 
 # Output (strict JSON):
 {{
-  "required_columns": ["col1", "col2"],
   "selected_files": ["file_id"],
-  "reasoning": "why these files and not others"
+  "reasoning": "why these files",
+  "answerability": "ANSWERABLE" | "UNANSWERABLE",
+  "answerability_reason": "brief explanation"
 }}
 
 # User Query:
@@ -89,34 +84,45 @@ Analysis: Need customer count. Check files → customer records in customers_dat
         # Parse JSON response
         valid_ids = []
         reasoning = ""
+        answerability = "ANSWERABLE"
+        answerability_reason = ""
         
         try:
             match = re.search(r'\{.*\}', response_text, re.DOTALL)
             if match:
                 parsed = json.loads(match.group())
                 candidate_ids = parsed.get("selected_files", [])
-                required_cols = parsed.get("required_columns", [])
                 reasoning = parsed.get("reasoning", "")
+                answerability = parsed.get("answerability", "ANSWERABLE")
+                answerability_reason = parsed.get("answerability_reason", "")
                 
                 # Validate IDs against registry
                 valid_ids = [fid for fid in candidate_ids if fid in self.registry.files]
         except (json.JSONDecodeError, AttributeError) as e:
             print(f"⚠️ Failed to parse LLM output: {e}")
         
-        # Fallback: if parsing failed or no valid IDs, use all files
-        if not valid_ids:
+        # Fallback: if parsing failed or no valid IDs, use all files (only if answerable)
+        if not valid_ids and answerability == "ANSWERABLE":
             print("⚠️ Router output unclear, using all files as fallback")
             valid_ids = [f.file_id for f in files]
         
-        # Update state
+        # Update state with file selection AND answerability
         state.selected_file_ids = valid_ids
-        state.selected_files_context = "\n\n".join(
-            self.registry.get(fid).build_context() for fid in valid_ids
-        )
+        state.answerability = answerability
+        state.answerability_reason = answerability_reason
         
-        if reasoning:
-            print(f"✅ Selected files: {valid_ids} | Reasoning: {reasoning}")
+        if valid_ids:
+            state.selected_files_context = "\n\n".join(
+                self.registry.get(fid).build_context() for fid in valid_ids
+            )
+        
+        # Log the routing decision
+        if answerability == "UNANSWERABLE":
+            print(f"❌ Query is UNANSWERABLE: {answerability_reason}")
         else:
-            print(f"✅ Selected files: {valid_ids}")
+            if reasoning:
+                print(f"✅ Selected files: {valid_ids} | Reasoning: {reasoning}")
+            else:
+                print(f"✅ Selected files: {valid_ids}")
         
         return state

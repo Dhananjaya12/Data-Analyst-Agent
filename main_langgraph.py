@@ -29,7 +29,7 @@ async def main():
     #     logger.info("Get free token at: https://huggingface.co/settings/tokens")
     #     return
 
-    token = os.getenv('GROQ_API_KEY_UNT')
+    token = os.getenv('GROQ_API_KEY')
     if not token:
         logger.error("❌ GROQ_API_KEY not set in .env")
         logger.info("Get free key: https://console.groq.com/keys")
@@ -89,68 +89,45 @@ async def main():
     # Sample queries
 
     queries = [
-    # 🟢 Basic (10)
-    "Total number of customers",
-    "Average age of customers",
-    "Total number of customers",
-    "Average age of customers",
-    # "Count of orders",
-    # "Average product price",
-    # "List all product categories",
+    # 🟢 Basic
+    # "Total number of customers",
+    # "Average age of customers",
     # "Count of customers with null ages",
-    # "Highest priced product",
-    # "Lowest priced product",
-    # "Number of reviews",
     # "Unique cities of customers",
+    # "Highest priced product",
 
-    # # 🟡 Joins (10)
-    # "Total revenue per customer",
-    # "Total orders per city",
-    # "Most ordered product",
-    # "Average order value per city",
-    # "Total quantity sold per product",
+    # 🟡 Joins + Aggregations
+    "Total revenue per customer",
+    "Most ordered product",
     # "Revenue per category",
-    # "Customers with highest number of orders",
-    # "Orders with failed payments",
+    "Customers with highest number of orders",
     # "Products that were never reviewed",
-    # "Customers who never placed an order",
 
-    # # 🔵 Multi-step reasoning (10)
+    # 🔵 Multi-step reasoning
     # "Which customer spent the most overall?",
-    # "Most popular category by quantity sold",
-    # "Average rating per product category",
-    # "Revenue comparison between Electronics and Fashion categories",
-    # "Top 5 products by total revenue",
-    # "Customers with more than one order and their average spend",
-    # "Orders with missing payment but high value",
+    "Top 5 products by total revenue",
+    "Customers with more than one order and their average spend",
     # "Products with high sales but low ratings",
-    # "City with the highest total revenue",
-    # "Monthly revenue trend over time",
+    "City with the highest total revenue",
 
-    # # 🔴 Hard / Orchestration (15)
-
-    # # Data quality / edge cases
+    # 🔴 Edge cases
     # "Find orders with no matching payment record",
-    # "Find order_items entries with invalid order_ids",
-    # "Products with null prices that were still ordered",
-    # "Customers with missing signup_date but who placed orders",
-    # "Reviews with missing ratings",
+    "Orders where total_amount does not match calculated sum of order_items",
+    "Customers who never placed an order",
 
-    # # Logical reasoning
-    # "Customers who only used Credit Card for payments",
-    # "Customers with failed payments but high total spending",
-    # "Products frequently ordered but never reviewed",
-    # "Customers who ordered products but never reviewed anything",
-    # "Orders where total_amount does not match calculated sum of order_items",
+    # 🧠 Ambiguity
+    "Top customers",
+    "Best products",
 
-    # # Ambiguity / traps
-    # "Top customers",
-    # "Best products",
-    # "Sales trends with weather impact",
+    # 🚫 Hallucination
+    "Which crypto influenced sales?",
+    "Employee performance versus revenue",
 
-    # # Noise / hallucination tests
-    # "Which crypto influenced sales?",
-    # "Employee performance versus revenue"
+    # 🟣 Caching tests
+    "Total revenue per customer",   # exact repeat
+    "total revenue per customer",   # variation
+    # "Revenue per customer",         # semantic variation
+    # "Which customer spent the most overall?"  # repeat
 ]
     # queries =     [
     # # Level 1: Basic Single-Operation Queries

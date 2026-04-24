@@ -23,68 +23,40 @@ class InsightGeneratorAgent(BaseAgent):
             logger.info(f"✅ No data - skipping insights")
             return state
         
-        prompt = f"""You are a senior data analyst. Generate ONLY fact-based insights.
+        prompt = f"""You are a data analyst. Answer the user's question using the data.
 
 # Question:
 {state.user_query}
 
-# Data Returned:
+# Data:
 {state.data_retrieved}
 
-# CRITICAL RULES:
-1. Every insight MUST be directly verifiable from the data above. NO speculation.
-2. NEVER produce filler or meta-insights like "No further breakdown available",
-   "Limited data", "More data would be needed", or "N/A". If there's only one
-   meaningful thing to say, say ONE insight and stop.
-3. Quality > quantity. Fewer strong insights beat padded lists.
+# Code (for context):
+{state.query_generated}
 
-# Step 1: Classify the data shape FIRST:
-
-## Case A: Single value (one number or single row with one key metric)
-- Produce EXACTLY ONE insight that states the value plainly.
-- Do NOT add a second insight. Do NOT say "no further breakdown."
-- Example: Data = [{{"value": 20}}] → ONE insight: "The total number of customers is 20."
-
-## Case B: Multiple rows with numeric values
-- Identify highest, lowest, ratios BETWEEN actual values shown.
-- Calculate percentages ONLY from numbers actually in the data.
-- Produce 2-3 strong insights.
-
-## Case C: Grouped/aggregated data
-- Describe distribution (top N, concentration).
-- Compare groups using actual numbers shown.
-- Produce 2-4 strong insights.
-
-## Case D: Empty result
-- Produce ONE insight: "No data matched the query criteria."
+# Rules:
+1. First insight = direct answer to the question, using specific values from the data.
+2. Optional 1-2 follow-up insights ONLY if they add real context (comparisons, surprising patterns).
+3. NEVER say: "no further breakdown", "limited data", "N/A", or similar filler.
+4. NEVER invent values or speculate beyond the data.
 
 # Examples:
 
+Q: "How many customers?"
 Data: [{{"value": 20}}]
-✅ GOOD (1 insight):
-{{"data_shape": "single_value", "insights": ["The total number of customers is 20."]}}
-❌ BAD (padded):
-{{"data_shape": "single_value", "insights": ["The total number of customers is 20.", "No further breakdown available from this data"]}}
+→ {{"data_shape": "single_value", "insights": ["You have 20 customers."]}}
 
-Data: [{{"total_revenue": 101350}}]
-✅ GOOD (1 insight):
-{{"data_shape": "single_value", "insights": ["Total revenue is $101,350."]}}
-❌ BAD: "Revenue shows strong growth" (no time data!)
-❌ BAD: "Performance is healthy" (no benchmark!)
-
+Q: "Which product has highest revenue?"
 Data: [{{"product": "Phone", "revenue": 72000}}, {{"product": "Laptop", "revenue": 36000}}]
-✅ GOOD (2 insights):
-{{"data_shape": "multi_row", "insights": [
-  "Phone revenue ($72,000) is exactly 2x Laptop's ($36,000).",
-  "Phone leads the two products with a $36,000 gap."
-]}}
+→ {{"data_shape": "grouped", "insights": [
+    "Phone has the highest revenue at $72,000.",
+    "That's 2× Laptop ($36,000), the runner-up."
+  ]}}
 
-# Output (STRICT JSON only, no other text):
+# Output (JSON only):
 {{
   "data_shape": "single_value" | "multi_row" | "grouped" | "empty",
-  "insights": [
-    "Fact 1 directly from the data"
-  ]
+  "insights": ["Direct answer", "Optional context"]
 }}
 
 Output:"""
