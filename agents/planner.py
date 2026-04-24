@@ -15,14 +15,8 @@ class PlannerAgent(BaseAgent):
 
     async def execute(self, state: ExecutionState) -> ExecutionState:
         logger.info(f"\n🧠 [PLANNER] {state.user_query}")
-        # dataset_context = self.context.build_short() if self.context else ""
         conversation_context = state.conversation_context or ""
         dataset_context = state.selected_files_context or "No file context available"
-#         prompt = f"""Break down this question into 2-3 brief steps.
-
-# Question: {state.user_query}
-
-# Steps:"""
 
         prompt = f"""You are a data analysis planner. Break queries into executable pandas steps.
 
@@ -63,8 +57,6 @@ class PlannerAgent(BaseAgent):
   ]
 }}"""
         
-        # CHECK LLM CACHE FIRST
-        # cached_response = cache_manager.get_llm_cache(prompt)
         cached_response = cache_manager.get_llm_cache(
     agent="Planner",
     user_query=state.user_query,
@@ -73,10 +65,10 @@ class PlannerAgent(BaseAgent):
 )
         
         if cached_response:
-            print("✅ Using cached LLM response")
+            logger.info("✅ Using cached LLM response")
             state.plan = cached_response
         else:
-            print("🔄 Calling LLM (no cache)")
+            logger.info("🔄 Calling LLM (no cache)")
             # Call LLM
             response = self.llm.invoke(prompt)
             plan = response.content if hasattr(response, 'content') else str(response)

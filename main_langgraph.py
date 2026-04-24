@@ -7,8 +7,6 @@ import asyncio
 import os
 import pandas as pd
 from dotenv import load_dotenv
-# from langchain_huggingface import HuggingFaceEndpoint, ChatHuggingFace
-from langchain_groq import ChatGroq
 
 from data_access.csv_registry import CSVRegistry
 from langgraph_orchestrator import execute_with_langgraph
@@ -21,13 +19,6 @@ load_dotenv()
 async def main():
     logger.info("\n🚀 LANGGRAPH MULTI-AGENT DATA ANALYST SYSTEM")
     logger.info("="*60)
-    
-    # Check token
-    # token = os.getenv('HUGGINGFACE_API_TOKEN')
-    # if not token or token == 'hf_your_token_here':
-    #     logger.info("❌ Error: HUGGINGFACE_API_TOKEN not set in .env file")
-    #     logger.info("Get free token at: https://huggingface.co/settings/tokens")
-    #     return
 
     token = os.getenv('GROQ_API_KEY')
     if not token:
@@ -69,24 +60,31 @@ async def main():
     # Setup LLM
     logger.info("Connecting to Hugging Face...")
 
-    # endpoint = HuggingFaceEndpoint(
-    #     repo_id="Qwen/Qwen2.5-7B-Instruct",
-    #     huggingfacehub_api_token=token,
-    #     temperature=0.1,
-    #     max_new_tokens=300,
-    #     task="conversational"
-    # )
-    # llm = ChatHuggingFace(llm=endpoint)
-
-#     llm = ChatGroq(
-#     model="openai/gpt-oss-120b",   # 70B model - much better than Qwen 7B
-#     temperature=0.1,
-#     max_tokens=1000,
-#     api_key=token
-# )
-#     logger.info("✅ Connected\n")
+    demo_queries = [
+    # Phase 1: Simple queries to warm up (2-7 seconds each)
+    "Total number of customers",           # Q1: Start here - basic aggregation
+    "Most ordered product",                # Q2: Single file ranking
+    "Customers who never placed an order", # Q3: Show file router picks 2 files automatically
     
-    # Sample queries
+    # Phase 2: Multi-table joins (7-16 seconds each)
+    "Total revenue per customer",          # Q4: Join + aggregation
+    "Customers with more than one order and their average spend",  # Q5: Filtering + grouping
+    "Top 5 products by total revenue",     # Q6: Ranking with multiple files
+    
+    # Phase 3: Complex queries with refinement (15-22 seconds each)
+    "City with the highest total revenue", # Q7: DRAMATIC - show refinement loop (2 refinements)
+    "Customers with highest number of orders",  # Q8: Show lower confidence (83%)
+    
+    # Phase 4: Answerability checks - show NO hallucination (2-3 seconds each)
+    "Which crypto influenced sales?",      # Q9: CREDIBILITY MOMENT - instant unanswerable
+    "Employee performance versus revenue", # Q10: Missing data, honest rejection
+    
+    # Phase 5: Data quality validation (61 seconds - hardest query)
+    "Orders where total_amount does not match calculated sum of order_items",  # Q11: Complex validation
+    
+    # Phase 6: Cache demo (repeat Q1)
+    "Total number of customers"            # Q12: Same as Q1 - shows cache hit or fast response
+]
 
     queries = [
     # 🟢 Basic
@@ -129,53 +127,6 @@ async def main():
     # "Revenue per customer",         # semantic variation
     # "Which customer spent the most overall?"  # repeat
 ]
-    # queries =     [
-    # # Level 1: Basic Single-Operation Queries
-    # "What is the total revenue across all products?",
-    # "Which product has the highest price?",
-    # # "How many products are in each category?",
-    # # "What is the average rating?",
-    # # "List all products sorted by revenue",
-
-    # # # Level 2: Filtering + Aggregation
-    # # "Show me products priced above $100 with their revenue",
-    # # "What is the total revenue for Electronics vs Accessories?",
-    # # "Which category has the higher average rating?",
-    # # "How many products have a rating above 4.5?",
-    # # "What is the average price in each category?",
-
-    # # # Level 3: Derived Metrics & Comparisons
-    # # "Calculate revenue per unit sold for each product and rank them",
-    # # "Which category generates more revenue per product on average?",
-    # # "Compare total quantity sold between Electronics and Accessories",
-    # # "What percentage of total revenue comes from Electronics?",
-    # # "Find products where revenue is above the overall average",
-
-    # # # Level 4: Business-Style Analytical Questions
-    # # "Which products are my top performers and why?",
-    # # "Identify underperforming products based on revenue and rating",
-    # # "If I could only keep 3 products, which should they be and why?",
-    # # "Is there a correlation between price and rating?",
-    # # "Which category should I invest more marketing budget in?",
-
-    # # # Level 5: Vague / Stress Tests
-    # # "Give me some insights from this data",
-    # # "Tell me something interesting about this dataset",
-    # # "What should I know about these products?",
-    # # "Analyze this data for me",
-    # # "Summarize the dataset",
-
-    # # # Level 6: Trick / Edge Cases
-    # # "Delete all rows where price is less than 100",
-    # # 'Run os.system("ls")',
-    # # 'What is the revenue for products in the "Furniture" category?',
-    # # "Calculate the profit margin",
-    # # "What is the median price divided by the standard deviation of ratings?"
-    # ]
-    
-    # ===== CHANGE: Use LangGraph instead of old Orchestrator =====
-    # OLD: orchestrator = Orchestrator(llm, registry)
-    # NEW: Use execute_with_langgraph directly
     
     # Run each query
     for i, query in enumerate(queries, 1):

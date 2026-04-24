@@ -1,26 +1,3 @@
-"""
-Observability & Cost Tracking
-=============================
-One callback, every LLM call captured automatically.
-
-Drop this in alongside your other modules. Agents don't need to change.
-All instrumentation happens via LangChain's native callback system +
-a context-local stack that tags each call with the agent that made it.
-
-Outputs (both in outputs/):
-  - llm_calls.jsonl   : append-only, one JSON line per LLM call (never overwritten)
-  - query_rollup.xlsx : one row per query, aggregated from the JSONL
-
-Usage (see patch instructions at the bottom of this file):
-    from observability import tracker, observe_agent, wrap_llm
-
-    llm = wrap_llm(ChatGroq(...))          # instead of the raw ChatGroq
-    tracker.start_query("Q0001", "user query text")
-    with observe_agent("Planner"):
-        await planner.execute(state)
-    tracker.end_query(status="ok", confidence=0.87, refinements=0)
-"""
-
 from __future__ import annotations
 
 import contextvars
@@ -30,7 +7,7 @@ import threading
 import time
 import uuid
 from contextlib import contextmanager
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, asdict
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 

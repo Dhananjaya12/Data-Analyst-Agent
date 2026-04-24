@@ -7,7 +7,6 @@ in LangGraph without race conditions.
 import json
 import re
 from .base import BaseAgent, ExecutionState
-from logger_config import logger
 
 
 def _parse_score(response_text: str, score_key: str, default: float = 0.5):

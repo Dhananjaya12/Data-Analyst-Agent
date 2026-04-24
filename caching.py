@@ -2,7 +2,7 @@
 import hashlib
 import time
 from datetime import datetime, timedelta
-from typing import Optional, List
+from typing import Optional
 
 from observability import record_cache_hit
 
@@ -151,31 +151,5 @@ class CacheManager:
             'data_cache_size': len(self.data_cache),
             'conversation_length': len(self.conversation),
         }
-
-    def invalidate_for_file(self, file_id: str) -> int:
-        """Drop every cached artifact that references this file."""
-        dropped = 0
-
-        # Full-response / data cache
-        keys = [k for k, e in self.data_cache.items()
-                if file_id in (e.get('files', []) or [])]
-        for k in keys:
-            del self.data_cache[k]
-        dropped += len(keys)
-
-        # LLM prompt cache (requires set_llm_cache to store file_ids — see below)
-        llm_keys = [k for k, e in self.llm_cache.items()
-                    if file_id in (e.get('file_ids', []) or [])]
-        for k in llm_keys:
-            del self.llm_cache[k]
-        dropped += len(llm_keys)
-
-        # Conversation — stale answers may reference deleted data
-        conv_len = len(self.conversation)
-        self.conversation = []
-
-        if dropped or conv_len:
-            print(f"🗑️  Invalidated {dropped} cache entries + {conv_len} conversation messages")
-        return dropped
 
 cache_manager = CacheManager()

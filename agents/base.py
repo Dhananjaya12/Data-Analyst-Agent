@@ -25,12 +25,11 @@ class ExecutionState:
 
     final_answer: str = ""
     confidence: float = 0.0
-    should_stop: bool = False
 
     selected_file_ids: list = field(default_factory=list)
     selected_files_context: str = ""
-    critic_report: dict = field(default_factory=dict)  # ← ADD THIS
-    refinement_count: int = 0  # ← ADD THIS
+    critic_report: dict = field(default_factory=dict)
+    refinement_count: int = 0 
 
     logic_score: float = 0.5
     data_score: float = 0.5
@@ -57,7 +56,8 @@ class BaseAgent(ABC):
     async def execute(self, state: ExecutionState) -> ExecutionState:
         """Execute agent logic"""
         pass
-
+   
+    @staticmethod
     def stop_execution(state: ExecutionState, message: str) -> ExecutionState:
         state.error = message
         raise StopExecution(state)

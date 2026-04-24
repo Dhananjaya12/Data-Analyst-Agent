@@ -18,7 +18,6 @@ from agents.refinement import RefinementAgent
 from logger_config import logger
 
 from observability import tracker, observe_agent
-# from semantic_cache import semantic_cache
 
 
 MAX_REFINEMENTS = 2
@@ -370,17 +369,6 @@ async def execute_with_langgraph(registry, query: str, context: str = "",
     query_id = f"Q-{uuid.uuid4().hex[:8]}"
     tracker.start_query(query_id, query)
 
-    # --- Full-response cache short-circuit -----------------------------
-    # file_ids = sorted(registry.files.keys())
-    # cached = cache_manager.get_full_response(query, file_ids)
-    # if cached:
-    #     _status("⚡ **Cache hit** — returning cached answer instantly")
-    #     tracker.end_query(
-    #         status="ok", confidence=cached.get("confidence", 1.0),
-    #         refinements=0, files_used=", ".join(file_ids),
-    #         extra={"full_response_cache_hit": True},
-    #     )
-    #     return {**cached, "cache_hit": True}
 
     file_ids = sorted(registry.files.keys())
 
@@ -394,17 +382,6 @@ async def execute_with_langgraph(registry, query: str, context: str = "",
             extra={"full_response_cache_hit": True},
         )
         return {**cached, "cache_hit": True}
-
-    # Try semantic cache (catches paraphrases like "total customers" vs "how many customers?")
-    # cached = semantic_cache.get(query, file_ids)
-    # if cached:
-    #     _status("⚡ **Cache hit** — returning cached answer instantly (semantic match)")
-    #     tracker.end_query(
-    #         status="ok", confidence=cached.get("confidence", 1.0),
-    #         refinements=0, files_used=", ".join(file_ids),
-    #         extra={"semantic_cache_hit": True},
-    #     )
-    #     return {**cached, "cache_hit": True}
 
     try:
         state = ExecutionState(user_query=query)
