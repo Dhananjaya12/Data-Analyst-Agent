@@ -121,6 +121,21 @@ except Exception as e:
 
 
 # ============================================================================
+# HELPER: Get file data with timestamp to force refresh
+# ============================================================================
+def get_file_data(filepath):
+    """Read file and return data + timestamp for cache busting"""
+    if not os.path.exists(filepath):
+        return None
+    try:
+        with open(filepath, 'rb') as f:
+            return f.read()
+    except Exception as e:
+        logger.error(f"Error reading {filepath}: {e}")
+        return None
+
+
+# ============================================================================
 # SIDEBAR
 # ============================================================================
 with st.sidebar:
@@ -185,12 +200,49 @@ with st.sidebar:
             cache.conversation = []
             st.rerun()
 
-    # --- Developer info ---
+    # --- Developer info with downloads ---
     with st.expander("Developer"):
         stats = cache.get_stats()
         st.caption(f"Cached queries: {stats['data_cache_size']}")
         st.caption(f"LLM prompts cached: {stats['llm_cache_size']}")
-        if st.button("Reset caches", use_container_width=True):
+        
+        st.divider()
+        st.markdown("**📊 Export Metrics**")
+        
+        col1, col2 = st.columns(2)
+        
+        # Download LLM Calls JSONL
+        with col1:
+            jsonl_data = get_file_data('outputs/llm_calls.jsonl')
+            if jsonl_data:
+                st.download_button(
+                    label="📋 LLM Calls",
+                    data=jsonl_data,
+                    file_name="llm_calls.jsonl",
+                    mime="application/json",
+                    use_container_width=True,
+                    key=f"download_jsonl_{len(st.session_state.messages)}"  # Force refresh
+                )
+            else:
+                st.caption("_No calls logged_")
+        
+        # Download Query Rollup Excel
+        with col2:
+            xlsx_data = get_file_data('outputs/query_rollup.xlsx')
+            if xlsx_data:
+                st.download_button(
+                    label="📈 Query Rollup",
+                    data=xlsx_data,
+                    file_name="query_rollup.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                    key=f"download_xlsx_{len(st.session_state.messages)}"  # Force refresh
+                )
+            else:
+                st.caption("_No metrics yet_")
+        
+        st.divider()
+        if st.button("🧹 Reset caches", use_container_width=True):
             cache.clear_all()
             st.rerun()
 
@@ -351,7 +403,7 @@ if prompt:
         "role": "assistant",
         "content": answer,
         "meta": meta_line,
-        "query": prompt,           # NEW: Store original query
-        "progress": progress_text  # NEW: Store analysis/progress
+        "query": prompt,           # Store original query
+        "progress": progress_text  # Store analysis/progress
     })
     cache.add_to_conversation("assistant", answer)

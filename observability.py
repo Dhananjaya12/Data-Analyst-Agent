@@ -148,12 +148,12 @@ class ObservabilityTracker:
 
     # --- recording ---------------------------------------------------------
     def record_call(self, rec: LLMCallRecord) -> None:
-        # Append to JSONL immediately so we never lose a call, even on crash.
         line = json.dumps(asdict(rec))
         with self._lock:
             os.makedirs(self.output_dir, exist_ok=True)
             with open(self.jsonl_path, "a", encoding="utf-8") as f:
                 f.write(line + "\n")
+                f.flush()  # ← ADD THIS LINE
             if rec.query_id in self._calls_by_query:
                 self._calls_by_query[rec.query_id].append(rec)
 
