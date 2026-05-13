@@ -5,6 +5,7 @@ pandas==2.1.0
 python-dotenv==1.0.0
 huggingface-hub==0.24.0
 streamlit==1.57.0
+spacy==3.8.2
 langchain_groq
 langgraph
 openpyxl
