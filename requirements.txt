@@ -8,3 +8,5 @@ streamlit==1.57.0
 langchain_groq
 langgraph
 openpyxl
+presidio_analyzer
+presidio_anonymizer
