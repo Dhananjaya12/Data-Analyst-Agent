@@ -3,7 +3,7 @@ PII Admin Tool - Manage PII redaction system
 """
 
 import argparse
-from pii_redactor_secure import secure_pii_redactor
+from pii_redactor import secure_pii_redactor
 
 
 def main():

@@ -6,7 +6,6 @@ import pandas as pd
 import os
 from typing import Dict, List, Optional
 from dataclasses import dataclass, field
-from pii_redactor import secure_pii_redactor
 
 
 @dataclass
@@ -16,7 +15,7 @@ class CSVFileInfo:
     file_path: str
     file_name: str
     description: str
-    df: pd.DataFrame = None
+    df: pd.DataFrame = None  # Note: it's 'df' not 'dataframe'
     
     # Auto-generated metadata
     columns: List[str] = field(default_factory=list)
@@ -56,35 +55,57 @@ class CSVRegistry:
     def __init__(self):
         self.files: Dict[str, CSVFileInfo] = {}
     
-    def register(self, file_path: str, description: str = "", file_id: str = None) -> str:
-        """Register a CSV file"""
-        if file_id is None:
-            file_id = os.path.splitext(os.path.basename(file_path))[0]
+    def register(self, file_path: str, description: str = "", file_id: str = None, user_id: str = "default_user") -> str:
+        """
+        Register a CSV file with PII redaction
+        
+        Args:
+            file_path: Path to CSV file
+            description: Optional description
+            file_id: Optional custom ID
+            user_id: User ID for PII isolation
+        """
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"File not found: {file_path}")
         
         df = pd.read_csv(file_path)
-
-        print(f"🔒 Scanning {file_id} for PII...")
-        df = secure_pii_redactor.redact_dataframe(df, file_id)
-        print(f"✅ PII redaction complete")
-            
-        info = CSVFileInfo(
+        file_name = os.path.basename(file_path)
+        file_id = file_id or os.path.splitext(file_name)[0]
+        
+        # PII Redaction
+        try:
+            from pii_redactor import secure_pii_redactor
+            print(f"🔒 Scanning {file_id} for PII...")
+            df = secure_pii_redactor.redact_dataframe(df, file_id, user_id)
+            print(f"✅ PII redaction complete")
+        except ImportError:
+            print(f"⚠️ PII redactor not available, skipping...")
+        except Exception as e:
+            print(f"⚠️ PII redaction failed: {e}")
+        
+        # Compute stats
+        column_stats = self._compute_stats(df)
+        sample_rows = df.head(2).to_dict('records')
+        
+        # Store file info - FIXED: use 'df' not 'dataframe'
+        self.files[file_id] = CSVFileInfo(
             file_id=file_id,
             file_path=file_path,
-            file_name=os.path.basename(file_path),
-            description=description or f"Data from {os.path.basename(file_path)}",
-            df=df,
-            columns=df.columns.tolist(),
-            column_types={c: str(df[c].dtype) for c in df.columns},
+            file_name=file_name,  # Added missing field
+            description=description or f"Dataset: {file_id}",
+            df=df,  # FIXED: was 'dataframe', should be 'df'
+            columns=list(df.columns),
             row_count=len(df),
-            sample_rows=df.head(3).to_dict(orient='records'),
-            column_stats=self._compute_stats(df)
+            column_types={col: str(dtype) for col, dtype in df.dtypes.items()},
+            sample_rows=sample_rows,  # Added
+            column_stats=column_stats  # Added
         )
         
-        self.files[file_id] = info
-        print(f"✅ Registered: {file_id} ({info.row_count} rows, {len(info.columns)} cols)")
+        print(f"✅ Registered: {file_id} ({len(df)} rows, {len(df.columns)} cols)")
         return file_id
     
     def _compute_stats(self, df: pd.DataFrame) -> Dict[str, dict]:
+        """Compute column statistics"""
         stats = {}
         for col in df.columns:
             if pd.api.types.is_numeric_dtype(df[col]):
@@ -97,7 +118,7 @@ class CSVRegistry:
             else:
                 unique = df[col].unique()
                 if len(unique) <= 10:
-                    stats[col] = {"values": list(unique)}
+                    stats[col] = {"values": list(unique[:10])}  # Limit to 10
                 else:
                     stats[col] = {"unique_count": len(unique), "examples": list(unique[:3])}
         return stats

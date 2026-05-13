@@ -6,3 +6,5 @@ python-dotenv==1.0.0
 huggingface-hub==0.24.0S
 streamlit==1.57.0
 langchain_groq
+langgraph
+openpyxl

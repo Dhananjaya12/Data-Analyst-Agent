@@ -15,8 +15,8 @@ from langgraph_orchestrator import execute_with_langgraph
 from caching import cache_manager
 from logger_config import logger
 from observability import wrap_llm
-from pii_redactor_secure import secure_pii_redactor  # NEW
-from semantic_cache import semantic_cache  # NEW
+from pii_redactor import secure_pii_redactor  # NEW
+from semantic_caching import semantic_cache  # NEW
 
 
 # ============================================================================

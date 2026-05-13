@@ -1,6 +1,6 @@
 """
 LangGraph Orchestrator with Ensemble Critics, Self-Healing Loop,
-rich progress callbacks, clean structured response, and answerability check.
+rich progress callbacks, and clean structured response.
 """
 
 import uuid
@@ -19,7 +19,7 @@ from agents.refinement import RefinementAgent
 from logger_config import logger
 
 from observability import tracker, observe_agent
-from semantic_cache import semantic_cache
+from semantic_caching import semantic_cache
 
 
 MAX_REFINEMENTS = 2
@@ -348,7 +348,7 @@ def create_analysis_graph(registry, status_callback=None):
 
 
 async def execute_with_langgraph(registry, query: str, context: str = "",
-                                  status_callback=None) -> dict:
+                                  status_callback=None, user_id: str = "default_user") -> dict:  # ADD user_id parameter
     """
     Returns a dict:
         {
@@ -362,7 +362,8 @@ async def execute_with_langgraph(registry, query: str, context: str = "",
         }
     """
     from caching import cache_manager
-    from semantic_caching import semantic_cache  # NEW
+    from semantic_caching import semantic_cache  # Fixed import name
+    from pii_redactor import secure_pii_redactor  # NEW: Import PII redactor
 
     def _status(msg: str):
         logger.info(msg)
@@ -383,7 +384,7 @@ async def execute_with_langgraph(registry, query: str, context: str = "",
             refinements=0, files_used=", ".join(file_ids),
             extra={"semantic_cache_hit": True},
         )
-        return {**semantic_cached, "cache_hit": True}
+        return {**semantic_cached, "cache_hit": True, "semantic_cache_hit": True}  # Add flag
 
     # --- Full-response cache short-circuit (exact match) -------------
     cached = cache_manager.get_full_response(query, file_ids)
@@ -419,7 +420,8 @@ async def execute_with_langgraph(registry, query: str, context: str = "",
         else:
             answer = "I couldn't generate insights for this query. Please try rephrasing."
 
-        answer = secure_pii_redactor.restore(answer)
+        # NEW: Restore PII before returning to user
+        answer = secure_pii_redactor.restore(answer, user_id)
 
         response = {
             "answer":      answer,
