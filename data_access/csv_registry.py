@@ -6,6 +6,7 @@ import pandas as pd
 import os
 from typing import Dict, List, Optional
 from dataclasses import dataclass, field
+from pii_redactor import secure_pii_redactor
 
 
 @dataclass
@@ -61,7 +62,11 @@ class CSVRegistry:
             file_id = os.path.splitext(os.path.basename(file_path))[0]
         
         df = pd.read_csv(file_path)
-        
+
+        print(f"🔒 Scanning {file_id} for PII...")
+        df = secure_pii_redactor.redact_dataframe(df, file_id)
+        print(f"✅ PII redaction complete")
+            
         info = CSVFileInfo(
             file_id=file_id,
             file_path=file_path,

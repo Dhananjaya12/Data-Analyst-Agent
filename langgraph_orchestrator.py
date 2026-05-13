@@ -7,6 +7,7 @@ import uuid
 from typing import Literal
 from langgraph.graph import StateGraph, END
 
+from pii_redactor import secure_pii_redactor
 from agents.base import ExecutionState
 from agents.safety_guard import SafetyGuardAgent
 from agents.file_router import FileRouterAgent
@@ -18,6 +19,7 @@ from agents.refinement import RefinementAgent
 from logger_config import logger
 
 from observability import tracker, observe_agent
+from semantic_cache import semantic_cache
 
 
 MAX_REFINEMENTS = 2
@@ -360,6 +362,7 @@ async def execute_with_langgraph(registry, query: str, context: str = "",
         }
     """
     from caching import cache_manager
+    from semantic_caching import semantic_cache  # NEW
 
     def _status(msg: str):
         logger.info(msg)
@@ -369,13 +372,23 @@ async def execute_with_langgraph(registry, query: str, context: str = "",
     query_id = f"Q-{uuid.uuid4().hex[:8]}"
     tracker.start_query(query_id, query)
 
-
+    # --- NEW: Semantic cache check FIRST (before full-response cache) ---
     file_ids = sorted(registry.files.keys())
+    semantic_cached = semantic_cache.get(query)
+    
+    if semantic_cached:
+        _status("🎯 **Semantic Cache HIT** — returning similar query result")
+        tracker.end_query(
+            status="ok", confidence=semantic_cached.get("confidence", 1.0),
+            refinements=0, files_used=", ".join(file_ids),
+            extra={"semantic_cache_hit": True},
+        )
+        return {**semantic_cached, "cache_hit": True}
 
-    # Try exact-match cache first
+    # --- Full-response cache short-circuit (exact match) -------------
     cached = cache_manager.get_full_response(query, file_ids)
     if cached:
-        _status("⚡ **Cache hit** — returning cached answer instantly (exact match)")
+        _status("⚡ **Cache hit** — returning cached answer instantly")
         tracker.end_query(
             status="ok", confidence=cached.get("confidence", 1.0),
             refinements=0, files_used=", ".join(file_ids),
@@ -406,6 +419,8 @@ async def execute_with_langgraph(registry, query: str, context: str = "",
         else:
             answer = "I couldn't generate insights for this query. Please try rephrasing."
 
+        answer = secure_pii_redactor.restore(answer)
+
         response = {
             "answer":      answer,
             "insights":    insights,
@@ -419,7 +434,9 @@ async def execute_with_langgraph(registry, query: str, context: str = "",
         # Cache only if we got a confidently-good answer
         if confidence >= 0.7 and insights:
             cache_manager.set_full_response(query, file_ids, response)
-            # semantic_cache.set(query, file_ids, response)  # NEW LINE
+            
+            # NEW: Also cache in semantic cache
+            semantic_cache.set(query, response)
 
         tracker.end_query(
             status="ok", confidence=confidence,

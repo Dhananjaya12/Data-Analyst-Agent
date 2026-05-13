@@ -1,6 +1,7 @@
 """
 CSV Chat Assistant — Streamlit UI with analysis next to each message
 Powered by GROQ + LangGraph multi-agent orchestration.
+WITH PII Redaction + Semantic Caching
 """
 
 import os
@@ -14,6 +15,8 @@ from langgraph_orchestrator import execute_with_langgraph
 from caching import cache_manager
 from logger_config import logger
 from observability import wrap_llm
+from pii_redactor_secure import secure_pii_redactor  # NEW
+from semantic_cache import semantic_cache  # NEW
 
 
 # ============================================================================
@@ -79,7 +82,7 @@ st.markdown("""
 # STATE
 # ============================================================================
 os.makedirs("data", exist_ok=True)
-os.makedirs("outputs", exist_ok=True)  # NEW: Ensure outputs dir exists
+os.makedirs("outputs", exist_ok=True)
 
 if "registry" not in st.session_state:
     st.session_state.registry = CSVRegistry()
@@ -91,6 +94,8 @@ if "cache" not in st.session_state:
     st.session_state.cache = cache_manager
 if "pending_query" not in st.session_state:
     st.session_state.pending_query = None
+if "user_id" not in st.session_state:  # NEW: User ID for PII isolation
+    st.session_state.user_id = "default_user"
 
 registry = st.session_state.registry
 cache = st.session_state.cache
@@ -186,7 +191,13 @@ with st.sidebar:
                         out.write(f.read())
                 try:
                     if file_id not in registry.files:
-                        registry.register(file_path, description=f"Data from {f.name}", file_id=file_id)
+                        # NEW: Pass user_id for PII redaction
+                        registry.register(
+                            file_path, 
+                            description=f"Data from {f.name}", 
+                            file_id=file_id,
+                            user_id=st.session_state.user_id
+                        )
                     st.session_state.uploaded_file_names.add(file_id)
                 except Exception as e:
                     logger.error(f"Upload error: {e}")
@@ -207,12 +218,21 @@ with st.sidebar:
         st.caption(f"Cached queries: {stats['data_cache_size']}")
         st.caption(f"LLM prompts cached: {stats['llm_cache_size']}")
         
+        # NEW: Semantic cache stats
+        sem_stats = semantic_cache.get_stats()
+        st.caption(f"Semantic cache: {sem_stats['total_queries']} queries")
+        st.caption(f"Similarity threshold: {sem_stats['threshold']:.0%}")
+        
+        # NEW: PII redaction stats
+        pii_count = secure_pii_redactor.get_user_mappings_count(st.session_state.user_id)
+        st.caption(f"🔒 PII values secured: {pii_count}")
+        
         st.divider()
         st.markdown("**📊 Export Metrics**")
         
         col1, col2 = st.columns(2)
         
-        # Download LLM Calls JSONL - READ ON EVERY RENDER
+        # Download LLM Calls JSONL
         with col1:
             jsonl_data = get_file_data('outputs/llm_calls.jsonl')
             if jsonl_data:
@@ -227,7 +247,7 @@ with st.sidebar:
             else:
                 st.caption("_No calls logged_")
         
-        # Download Query Rollup Excel - READ ON EVERY RENDER
+        # Download Query Rollup Excel
         with col2:
             xlsx_data = get_file_data('outputs/query_rollup.xlsx')
             if xlsx_data:
@@ -243,9 +263,17 @@ with st.sidebar:
                 st.caption("_No metrics yet_")
         
         st.divider()
-        if st.button("🧹 Reset caches", use_container_width=True):
-            cache.clear_all()
-            st.rerun()
+        
+        # NEW: Two-column cache clear buttons
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🧹 Reset caches", use_container_width=True):
+                cache.clear_all()
+                st.rerun()
+        with col2:
+            if st.button("Clear semantic", use_container_width=True):
+                semantic_cache.clear()
+                st.rerun()
 
 
 # ============================================================================
@@ -299,7 +327,7 @@ else:
             if msg.get("meta"):
                 st.caption(msg["meta"])
         
-        # NEW: If this is an assistant message AND it has analysis, show it right after
+        # If this is an assistant message AND it has analysis, show it right after
         if msg["role"] == "assistant" and msg.get("progress"):
             query_label = msg.get("query", "Query")[:50]
             with st.expander(f"📊 Analysis: {query_label}", expanded=False):
@@ -328,7 +356,7 @@ if prompt:
         answer = ""
         meta_line = ""
         result = None
-        progress_log = []  # Collect progress for analysis
+        progress_log = []
 
         try:
             if not registry.files:
@@ -359,6 +387,7 @@ if prompt:
                         execute_with_langgraph(
                             registry, prompt, context=context,
                             status_callback=on_status,
+                            user_id=st.session_state.user_id  # NEW: Pass user_id for PII
                         )
                     )
                 finally:
@@ -370,10 +399,17 @@ if prompt:
                         st.markdown(msg)
 
                 answer = result["answer"]
+                
+                # NEW: Restore PII in the answer before showing to user
+                answer = secure_pii_redactor.restore(answer, st.session_state.user_id)
 
                 # Compact status label
                 if result.get("cache_hit"):
-                    status.update(label="⚡ Instant (cached)", state="complete")
+                    # Check if it was semantic cache
+                    if result.get("semantic_cache_hit"):
+                        status.update(label="🎯 Semantic cache hit", state="complete")
+                    else:
+                        status.update(label="⚡ Instant (cached)", state="complete")
                 else:
                     conf = result.get("confidence", 0)
                     status.update(label=f"Done · {conf:.0%} confidence", state="complete")
@@ -383,7 +419,10 @@ if prompt:
                 if result.get("files_used"):
                     meta_parts.append(f"📁 {result['files_used']}")
                 if result.get("cache_hit"):
-                    meta_parts.append("⚡ cached")
+                    if result.get("semantic_cache_hit"):
+                        meta_parts.append("🎯 semantic cache")
+                    else:
+                        meta_parts.append("⚡ cached")
                 elif result.get("refinements", 0) > 0:
                     meta_parts.append(f"🔧 refined {result['refinements']}×")
                 meta_line = "  ·  ".join(meta_parts)
@@ -398,13 +437,13 @@ if prompt:
             status.update(label="Error", state="error")
             logger.error(f"Query error: {e}", exc_info=True)
 
-    # Persist - NOW INCLUDE progress in the message
+    # Persist - include progress in the message
     progress_text = "\n".join(progress_log) if progress_log else ""
     st.session_state.messages.append({
         "role": "assistant",
         "content": answer,
         "meta": meta_line,
-        "query": prompt,           # Store original query
-        "progress": progress_text  # Store analysis/progress
+        "query": prompt,
+        "progress": progress_text
     })
     cache.add_to_conversation("assistant", answer)
