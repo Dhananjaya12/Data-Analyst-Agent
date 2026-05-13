@@ -5,6 +5,7 @@ Production-Grade PII Redactor with Encryption
 from presidio_analyzer import AnalyzerEngine
 from presidio_anonymizer import AnonymizerEngine
 from cryptography.fernet import Fernet
+from presidio_analyzer.nlp_engine import NlpEngineProvider
 import sqlite3
 import pandas as pd
 import hashlib
@@ -24,7 +25,18 @@ class SecurePIIRedactor:
     """
     
     def __init__(self, db_path='secure_pii.db', encryption_key_path='encryption.key'):
-        self.analyzer = AnalyzerEngine()
+        # self.analyzer = AnalyzerEngine()
+        # Configure to use small model (en_core_web_sm)
+        nlp_configuration = {
+            "nlp_engine_name": "spacy",
+            "models": [{"lang_code": "en", "model_name": "en_core_web_sm"}]
+        }
+
+        provider = NlpEngineProvider(nlp_configuration=nlp_configuration)
+        nlp_engine = provider.create_engine()
+
+        self.analyzer = AnalyzerEngine(nlp_engine=nlp_engine)
+
         self.anonymizer = AnonymizerEngine()
         
         # Encryption setup
