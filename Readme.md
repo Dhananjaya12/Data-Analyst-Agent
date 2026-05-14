@@ -1,6 +1,9 @@
-# Multi-Agent Data Analyst System [Streamlit Live Demo](https://dhananjaya-paliwal-data-analyst-agent.streamlit.app)
+# Multi-Agent Data Analyst System 
 
 > **Production-grade AI system that analyzes CSV data using natural language queries with 8 specialized LLM agents orchestrated by LangGraph**
+
+
+🚀 **[Live Demo](https://dhananjaya-paliwal-data-analyst-agent.streamlit.app)** | 📂 [Architecture](./ARCHITECTURE_DIAGRAM.md)
 
 Transform your CSV data into actionable insights through conversational AI. Features semantic caching (80% similarity) for instant responses, military-grade PII encryption, intelligent answerability checks, multi-step planning, and self-healing query refinement.
 
